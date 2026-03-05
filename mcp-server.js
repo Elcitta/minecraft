@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+require('dotenv').config();
 
 /**
  * Minecraft Bot MCP Server
@@ -20,6 +21,7 @@ const selfDefense = require('./tools/selfDefense');
 const gatherResource = require('./tools/gatherResource');
 const giveItem = require('./tools/giveItem');
 const selfSustain = require('./tools/selfSustain');
+const placeBlocks = require('./tools/placeBlocks');
 
 // Initialize bot tools
 console.error('Initializing Minecraft bot tools...');
@@ -29,6 +31,7 @@ const guardTool = guard(bot);
 const selfDefenseTool = selfDefense(bot);
 const gatherResourceTool = gatherResource(bot);
 const giveItemTool = giveItem(bot);
+const placeBlocksTool = placeBlocks(bot, gatherResourceTool);
 
 
 // Create MCP server
@@ -231,6 +234,55 @@ const tools = [
       required: ['player', 'item', 'amount'],
     },
   },
+  {
+    name: 'minecraft_place_block',
+    description: 'Place a single block at the specified coordinates. The block must be in the bot inventory. Keywords: place, put, set block.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        block: {
+          type: 'string',
+          description: 'Block name to place (e.g., "cobblestone", "oak_planks", "stone_bricks")',
+        },
+        x: { type: 'number', description: 'X coordinate' },
+        y: { type: 'number', description: 'Y coordinate' },
+        z: { type: 'number', description: 'Z coordinate' },
+      },
+      required: ['block', 'x', 'y', 'z'],
+    },
+  },
+  {
+    name: 'minecraft_build_structure',
+    description: 'Build a structure near the bot. The bot automatically picks the best blocks from inventory (e.g. planks for floors, cobblestone for walls) and will gather dirt if not enough materials are available. For houses, pre-built blueprints are used so no dimensions are needed. Supported types: "house" (4 walls + floor + roof with a door), "wall", "floor"/"platform", "box" (solid), "hollow_box". Keywords: build, construct, create, house, wall, floor, platform, shelter, base.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        type: {
+          type: 'string',
+          description: 'Structure type to build',
+          enum: ['house', 'wall', 'floor', 'platform', 'box', 'hollow_box'],
+        },
+        size: {
+          type: 'string',
+          description: 'Size preset for houses: "small" (5×5×5, default) or "medium" (7×5×7). Ignored for other types.',
+          enum: ['small', 'medium'],
+        },
+        width: {
+          type: 'number',
+          description: 'Width in blocks (only for wall/floor/box types, not needed for house). Defaults to 5.',
+        },
+        height: {
+          type: 'number',
+          description: 'Height in blocks (only for wall/box types, not needed for house). Defaults to 3.',
+        },
+        length: {
+          type: 'number',
+          description: 'Length in blocks (only for floor/box types). Defaults to same as width.',
+        },
+      },
+      required: ['type'],
+    },
+  },
 ];
 
 // List tools handler
@@ -344,7 +396,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const mcData = require('minecraft-data')(bot.version);
         bot.pathfinder.setMovements(new Movements(bot, mcData));
         bot.pathfinder.setGoal(new goals.GoalBlock(args.x, args.y, args.z));
-        
+
         return {
           content: [
             {
@@ -357,15 +409,15 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       case 'minecraft_attack_entity': {
         let entity;
-        
+
         // Special handling for "nearest/closest player/mob" commands
         const searchTerm = args.entityName.toLowerCase();
-        if (searchTerm.includes('nearest') || searchTerm.includes('closest') || 
-            searchTerm === 'player' || searchTerm === 'any player') {
+        if (searchTerm.includes('nearest') || searchTerm.includes('closest') ||
+          searchTerm === 'player' || searchTerm === 'any player') {
           // Find nearest player
           entity = bot.nearestEntity(e => e.type === 'player');
-        } else if (searchTerm === 'mob' || searchTerm === 'any mob' || 
-                   searchTerm.includes('nearest mob') || searchTerm.includes('closest mob')) {
+        } else if (searchTerm === 'mob' || searchTerm === 'any mob' ||
+          searchTerm.includes('nearest mob') || searchTerm.includes('closest mob')) {
           // Find nearest mob
           entity = bot.nearestEntity(e => e.type === 'mob');
         } else {
@@ -408,7 +460,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           if (e === bot.entity) return false;
           const distance = e.position.distanceTo(bot.entity.position);
           if (distance > range) return false;
-          
+
           if (args.type) {
             return e.type === args.type;
           }
@@ -449,7 +501,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       case 'minecraft_equip_item': {
         const item = bot.inventory.items().find(i => i.name.includes(args.itemName));
-        
+
         if (!item) {
           return {
             content: [
@@ -509,7 +561,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         // If gathering succeeded and giveToPlayer is specified, give the items
         if (result.success && giveToPlayer) {
           const giveResult = await giveItemTool.giveItem(giveToPlayer, resource, result.collected);
-          
+
           if (giveResult.success) {
             return {
               content: [
@@ -653,6 +705,24 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             isError: true,
           };
         }
+      }
+
+      case 'minecraft_place_block': {
+        const result = await placeBlocksTool.placeBlock(args.block, args.x, args.y, args.z);
+        return {
+          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+          isError: !result.success,
+        };
+      }
+
+      case 'minecraft_build_structure': {
+        const result = await placeBlocksTool.buildStructure(
+          args.type, args.size, args.width, args.height, args.length
+        );
+        return {
+          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+          isError: !result.success,
+        };
       }
 
       default:

@@ -2,7 +2,9 @@
   "mcpServers": {
     "minecraft-bot": {
       "command": "node",
-      "args": ["/home/aibel/Documents/Code/Minecraft/mcp-server.js"],
+      "args": [
+        "/home/aibel/Documents/Code/Minecraft/mcp-server.js"
+      ],
       "env": {
         "MC_HOST": "localhost",
         "MC_PORT": "22122",
